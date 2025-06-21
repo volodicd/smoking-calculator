@@ -20,6 +20,61 @@ app.register(cors, {
   credentials: true
 })
 
+// Group score calculation helper
+async function calculateGroupScore(sessionId: string) {
+  const session = await prisma.session.findUnique({
+    where: { id: sessionId },
+    include: { participants: true }
+  })
+
+  if (!session) return
+
+  const submittedParticipants = session.participants.filter(p => p.hasSubmitted)
+
+  // Calculate averages
+  const avgRarity = submittedParticipants.reduce((sum, p) => sum + (p.rarity || 0), 0) / submittedParticipants.length
+  const avgSocial = submittedParticipants.reduce((sum, p) => sum + (p.social || 0), 0) / submittedParticipants.length
+  const avgDistance = submittedParticipants.reduce((sum, p) => sum + (p.distance || 0), 0) / submittedParticipants.length
+  const avgContext = submittedParticipants.reduce((sum, p) => sum + (p.context || 0), 0) / submittedParticipants.length
+
+  // Calculate penalties
+  let penalties = 0
+  if (session.recentPenalty) penalties += 15
+  if (session.sickPenalty) penalties += 10
+  if (session.importantPenalty) penalties += 5
+
+  // Apply formula
+  const groupScore = Math.round(Math.max(0,
+    ((avgRarity - 1) * 3) +
+    ((avgSocial - 1) * 3) +
+    ((avgDistance - 1) * 2) +
+    ((avgContext - 1) * 3) -
+    penalties
+  ))
+
+  const canSmoke = groupScore >= session.threshold
+
+  // Update or create group result
+  await prisma.groupResult.upsert({
+    where: { sessionId },
+    update: {
+      averageScore: groupScore,
+      canSmoke
+    },
+    create: {
+      sessionId,
+      averageScore: groupScore,
+      canSmoke
+    }
+  })
+
+  // Update session status
+  await prisma.session.update({
+    where: { id: sessionId },
+    data: { status: 'COMPLETED' }
+  })
+}
+
 // Types
 interface CreateSessionBody {
   name: string
@@ -40,7 +95,6 @@ function generateCode(length: number = 6): string {
 // Create session endpoint
 app.post('/api/sessions', async (request, reply) => {
   try {
-    // DEBUG: Log what we received
     app.log.info('Received request body:', JSON.stringify(request.body))
     app.log.info('Content-Type:', request.headers['content-type'])
 
@@ -122,7 +176,12 @@ app.post('/api/admin/session', async (request, reply) => {
             id: true,
             hashCode: true,
             hasSubmitted: true,
-            isJoined: true
+            isJoined: true,
+            score: true,
+            rarity: true,
+            social: true,
+            distance: true,
+            context: true
           }
         },
         groupResult: true,
@@ -211,26 +270,92 @@ app.post('/api/join', async (request, reply) => {
   }
 })
 
-// Submit score endpoint
-app.post('/api/submit-score', async (request, reply) => {
+// Set penalties endpoint
+app.post('/api/admin/set-penalties', async (request, reply) => {
   try {
-    const body = request.body as { participantId: string, score: number }
-
-    if (!body?.participantId || body?.score === undefined) {
-      reply.status(400)
-      return { error: 'Participant ID and score are required' }
+    const body = request.body as {
+      adminSecret: string
+      penalties: { recent: boolean, sick: boolean, important: boolean }
     }
 
-    if (body.score < 0 || body.score > 100) {
+    if (!body?.adminSecret) {
       reply.status(400)
-      return { error: 'Score must be between 0 and 100' }
+      return { error: 'Admin secret is required' }
     }
 
-    // Update participant score
+    // Update session penalties
+    const session = await prisma.session.update({
+      where: { adminSecret: body.adminSecret },
+      data: {
+        recentPenalty: body.penalties.recent,
+        sickPenalty: body.penalties.sick,
+        importantPenalty: body.penalties.important
+      },
+      include: {
+        participants: true,
+        groupResult: true
+      }
+    })
+
+    if (!session) {
+      reply.status(404)
+      return { error: 'Session not found' }
+    }
+
+    // Recalculate group score if all participants submitted
+    const submittedParticipants = session.participants.filter(p => p.hasSubmitted)
+    if (submittedParticipants.length === session.participantCount) {
+      await calculateGroupScore(session.id)
+    }
+
+    return { success: true, session }
+  } catch (error) {
+    app.log.error('Error setting penalties:', error)
+    reply.status(500)
+    return { error: 'Internal server error' }
+  }
+})
+
+// Submit score endpoint
+app.post('/api/submit', async (request, reply) => {
+  try {
+    const body = request.body as {
+      participantId: string
+      rarity: number
+      social: number
+      distance: number
+      context: number
+    }
+
+    if (!body?.participantId || !body?.rarity || !body?.social || !body?.distance || !body?.context) {
+      reply.status(400)
+      return { error: 'Participant ID and all criteria are required' }
+    }
+
+    // Validate criteria ranges
+    const criteria = [body.rarity, body.social, body.distance, body.context]
+    if (criteria.some(val => val < 1 || val > 10)) {
+      reply.status(400)
+      return { error: 'All criteria must be between 1 and 10' }
+    }
+
+    // Calculate individual score (no penalties)
+    const individualScore = Math.round(
+      ((body.rarity - 1) * 3) +
+      ((body.social - 1) * 3) +
+      ((body.distance - 1) * 2) +
+      ((body.context - 1) * 3)
+    )
+
+    // Update participant
     const participant = await prisma.participant.update({
       where: { id: body.participantId },
       data: {
-        score: body.score,
+        rarity: body.rarity,
+        social: body.social,
+        distance: body.distance,
+        context: body.context,
+        score: individualScore,
         hasSubmitted: true
       },
       include: {
@@ -245,30 +370,15 @@ app.post('/api/submit-score', async (request, reply) => {
     const session = participant.session
     const submittedParticipants = session.participants.filter(p => p.hasSubmitted)
 
-    // Check if all participants have submitted
+    // Check if all participants submitted
     if (submittedParticipants.length === session.participantCount) {
-      // Calculate average score
-      const totalScore = submittedParticipants.reduce((sum, p) => sum + (p.score || 0), 0)
-      const averageScore = totalScore / submittedParticipants.length
-      const canSmoke = averageScore >= session.threshold
-
-      // Create group result
-      await prisma.groupResult.create({
-        data: {
-          sessionId: session.id,
-          averageScore,
-          canSmoke
-        }
-      })
-
-      // Update session status
-      await prisma.session.update({
-        where: { id: session.id },
-        data: { status: 'COMPLETED' }
-      })
+      await calculateGroupScore(session.id)
     }
 
-    return { success: true }
+    return {
+      success: true,
+      personalScore: individualScore
+    }
   } catch (error) {
     app.log.error('Error submitting score:', error)
     reply.status(500)
@@ -277,6 +387,7 @@ app.post('/api/submit-score', async (request, reply) => {
 })
 
 app.get('/api/health', () => ({ status: 'ok' }))
+
 const start = async () => {
   try {
     await app.listen({ port: 3000, host: '0.0.0.0' })

@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Settings, Users, Trophy, Hash, Type, Copy, RefreshCw } from 'lucide-react'
+import { Settings, Users, Trophy, Hash, Type, Copy, RefreshCw, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
@@ -34,6 +34,7 @@ export function AdminPanel({}: AdminPanelProps) {
         body: JSON.stringify({
           name: sessionName,
           participantCount,
+          threshold,
           adminSecret
         })
       })
@@ -74,6 +75,36 @@ export function AdminPanel({}: AdminPanelProps) {
       console.error('Failed to fetch session:', error)
     } finally {
       setIsRefreshing(false)
+    }
+  }
+
+  const updatePenalty = async (penaltyType: string, enabled: boolean) => {
+    try {
+      const penalties = {
+        recent: penaltyType === 'recent' ? enabled : (session.recentPenalty || false),
+        sick: penaltyType === 'sick' ? enabled : (session.sickPenalty || false),
+        important: penaltyType === 'important' ? enabled : (session.importantPenalty || false)
+      }
+
+      const response = await fetch(`${API_URL}/api/admin/set-penalties`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminSecret,
+          penalties
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setSession(data.session)
+        toast.success('Penalties updated')
+      } else {
+        throw new Error('Failed to update penalties')
+      }
+    } catch (error) {
+      toast.error('Failed to update penalties')
+      console.error(error)
     }
   }
 
@@ -196,8 +227,8 @@ export function AdminPanel({}: AdminPanelProps) {
                     </div>
                   </div>
                   <div>
-                    <div className="text-white/70 text-sm">Session ID</div>
-                    <div className="text-white text-sm font-mono">{session.id}</div>
+                    <div className="text-white/70 text-sm">Threshold</div>
+                    <div className="text-white text-lg font-medium">{session.threshold || threshold}</div>
                   </div>
                   <div>
                     <div className="text-white/70 text-sm">Created</div>
@@ -205,6 +236,53 @@ export function AdminPanel({}: AdminPanelProps) {
                   </div>
                 </div>
               </div>
+
+              {/* PENALTY CONTROLS */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-red-500/10 border border-red-500/30 rounded-xl p-6"
+              >
+                <h3 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-red-400" />
+                  Group Penalties
+                </h3>
+
+                <div className="space-y-4">
+                  <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={session.recentPenalty || false}
+                      onChange={(e) => updatePenalty('recent', e.target.checked)}
+                      className="w-5 h-5 accent-red-500"
+                    />
+                    <span className="text-white flex-1">Smoked within last 2 weeks</span>
+                    <span className="text-red-400 font-semibold">-15</span>
+                  </label>
+
+                  <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={session.sickPenalty || false}
+                      onChange={(e) => updatePenalty('sick', e.target.checked)}
+                      className="w-5 h-5 accent-red-500"
+                    />
+                    <span className="text-white flex-1">Someone feels sick</span>
+                    <span className="text-red-400 font-semibold">-10</span>
+                  </label>
+
+                  <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-white/5 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={session.importantPenalty || false}
+                      onChange={(e) => updatePenalty('important', e.target.checked)}
+                      className="w-5 h-5 accent-red-500"
+                    />
+                    <span className="text-white flex-1">Important day tomorrow</span>
+                    <span className="text-red-400 font-semibold">-5</span>
+                  </label>
+                </div>
+              </motion.div>
 
               {/* Participants Hash Codes */}
               {session.participants && session.participants.length > 0 && (
@@ -222,7 +300,9 @@ export function AdminPanel({}: AdminPanelProps) {
                         transition={{ delay: index * 0.1 }}
                         onClick={() => copyToClipboard(participant.hashCode, 'Hash code')}
                         className={`p-4 rounded-lg cursor-pointer transition-all transform hover:scale-105 ${
-                          participant.isJoined
+                          participant.hasSubmitted
+                            ? 'bg-gradient-to-r from-purple-500 to-indigo-500'
+                            : participant.isJoined
                             ? 'bg-gradient-to-r from-green-500 to-emerald-500'
                             : 'bg-gradient-to-r from-blue-500 to-cyan-500'
                         }`}
@@ -230,14 +310,20 @@ export function AdminPanel({}: AdminPanelProps) {
                         <div className="text-white text-center">
                           <div className="text-xs opacity-80">
                             Participant {index + 1}
-                            {participant.isJoined && ' ✓'}
+                            {participant.hasSubmitted && ' ✓ Submitted'}
+                            {!participant.hasSubmitted && participant.isJoined && ' ✓ Joined'}
                           </div>
                           <div className="text-lg font-mono font-bold">{participant.hashCode}</div>
+                          {participant.hasSubmitted && participant.score !== null && (
+                            <div className="text-sm opacity-90">Score: {participant.score}</div>
+                          )}
                         </div>
                       </motion.div>
                     ))}
                   </div>
-                  <p className="text-white/70 text-sm mt-2">Click to copy hash code • Green = Joined</p>
+                  <p className="text-white/70 text-sm mt-2">
+                    Click to copy • Blue = Not Joined • Green = Joined • Purple = Submitted
+                  </p>
                 </div>
               )}
 
@@ -282,7 +368,7 @@ export function AdminPanel({}: AdminPanelProps) {
                   </div>
                 </div>
 
-                {/* Participants List */}
+                {/* Participants List with Individual Scores */}
                 <div className="bg-white/5 rounded-lg p-4">
                   <h4 className="text-lg font-medium text-white mb-3">Participants</h4>
                   <div className="space-y-2">
@@ -298,6 +384,11 @@ export function AdminPanel({}: AdminPanelProps) {
                           <div className="text-white/60 font-mono text-sm">
                             {participant.hashCode}
                           </div>
+                          {participant.hasSubmitted && (
+                            <div className="text-white/80 text-sm">
+                              Score: {participant.score || 0}
+                            </div>
+                          )}
                         </div>
                         <div className="flex gap-2">
                           <div className={`px-3 py-1 rounded-full text-xs font-medium ${
@@ -332,13 +423,25 @@ export function AdminPanel({}: AdminPanelProps) {
                     }`}
                   >
                     <div className="text-4xl font-bold text-white mb-2">
-                      {session.groupResult.averageScore.toFixed(1)} / {threshold}
+                      {session.groupResult.averageScore} / {session.threshold || threshold}
                     </div>
                     <div className={`text-xl font-semibold ${
                       session.groupResult.canSmoke ? 'text-green-300' : 'text-red-300'
                     }`}>
                       {session.groupResult.canSmoke ? '🎉 Can Smoke!' : '❌ Cannot Smoke'}
                     </div>
+
+                    {/* Penalty Breakdown */}
+                    {(session.recentPenalty || session.sickPenalty || session.importantPenalty) && (
+                      <div className="mt-4 text-white/70 text-sm">
+                        <div>Applied Penalties:</div>
+                        <div className="flex justify-center gap-4 mt-2">
+                          {session.recentPenalty && <span>Recent smoking: -15</span>}
+                          {session.sickPenalty && <span>Someone sick: -10</span>}
+                          {session.importantPenalty && <span>Important day: -5</span>}
+                        </div>
+                      </div>
+                    )}
                   </motion.div>
                 )}
               </div>

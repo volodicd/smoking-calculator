@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Star, Clock, Users, Sparkles, AlertTriangle, Send } from 'lucide-react'
+import { Star, Clock, Users, Sparkles, Send } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useUserStore } from '../store/userStore'
-import { useSocket } from '../hooks/useSocket'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
@@ -42,12 +41,6 @@ const CRITERIA = [
   }
 ]
 
-const PENALTIES = [
-  { id: 'recent', label: 'Курили протягом останніх 2 тижнів', value: 15 },
-  { id: 'sick', label: 'Почуваєтеся погано', value: 10 },
-  { id: 'important', label: 'Завтра важливий день', value: 5 }
-]
-
 export function ScoreForm({ onSubmitted }: ScoreFormProps) {
   const [scores, setScores] = useState({
     rarity: 5,
@@ -55,41 +48,37 @@ export function ScoreForm({ onSubmitted }: ScoreFormProps) {
     distance: 5,
     context: 5
   })
-  const [penalties, setPenalties] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const { token, setPersonalScore, setSubmitted } = useUserStore()
-  const { on, off } = useSocket()
+  const { participantId, setPersonalScore, setSubmitted } = useUserStore()
 
   const calculatePersonalScore = () => {
-    const penaltySum = penalties.reduce((sum, penalty) => {
-      const penaltyData = PENALTIES.find(p => p.id === penalty)
-      return sum + (penaltyData?.value || 0)
-    }, 0)
-
-    return Math.max(0,
+    return Math.round(
       ((scores.rarity - 1) * 3) +
       ((scores.social - 1) * 3) +
       ((scores.distance - 1) * 2) +
-      ((scores.context - 1) * 3) -
-      penaltySum
+      ((scores.context - 1) * 3)
     )
   }
 
   const handleSubmit = async () => {
+    if (!participantId) {
+      toast.error('Participant ID not found')
+      return
+    }
+
     setIsSubmitting(true)
     try {
       const response = await fetch(`${API_URL}/api/submit`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
+          participantId,
           rarity: scores.rarity,
           social: scores.social,
           distance: scores.distance,
-          context: scores.context,
-          penalties
+          context: scores.context
         })
       })
 
@@ -112,14 +101,6 @@ export function ScoreForm({ onSubmitted }: ScoreFormProps) {
 
   const updateScore = (criteria: string, value: number) => {
     setScores(prev => ({ ...prev, [criteria]: value }))
-  }
-
-  const togglePenalty = (penaltyId: string) => {
-    setPenalties(prev =>
-      prev.includes(penaltyId)
-        ? prev.filter(p => p !== penaltyId)
-        : [...prev, penaltyId]
-    )
   }
 
   const personalScore = calculatePersonalScore()
@@ -149,12 +130,15 @@ export function ScoreForm({ onSubmitted }: ScoreFormProps) {
             }`}
           >
             <div className="text-4xl font-bold text-white mb-2">
-              {personalScore} / 100
+              {personalScore} / 99
             </div>
             <div className={`text-lg font-semibold ${
               personalScore >= 50 ? 'text-green-300' : 'text-red-300'
             }`}>
               Your Personal Score
+            </div>
+            <div className="text-white/60 text-sm mt-1">
+              (excluding group penalties)
             </div>
           </motion.div>
 
@@ -206,37 +190,6 @@ export function ScoreForm({ onSubmitted }: ScoreFormProps) {
               )
             })}
           </div>
-
-          {/* Penalties */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 }}
-            className="mt-8 bg-red-500/10 border border-red-500/30 rounded-xl p-6"
-          >
-            <div className="flex items-center gap-3 mb-4">
-              <AlertTriangle className="w-6 h-6 text-red-400" />
-              <h3 className="text-lg font-semibold text-white">Penalty Factors</h3>
-            </div>
-
-            <div className="space-y-3">
-              {PENALTIES.map((penalty) => (
-                <label
-                  key={penalty.id}
-                  className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-white/5 transition-colors"
-                >
-                  <input
-                    type="checkbox"
-                    checked={penalties.includes(penalty.id)}
-                    onChange={() => togglePenalty(penalty.id)}
-                    className="w-5 h-5 accent-red-500"
-                  />
-                  <span className="text-white flex-1">{penalty.label}</span>
-                  <span className="text-red-400 font-semibold">-{penalty.value}</span>
-                </label>
-              ))}
-            </div>
-          </motion.div>
 
           {/* Submit Button */}
           <motion.button

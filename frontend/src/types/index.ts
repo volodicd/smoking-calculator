@@ -1,13 +1,18 @@
 export interface Session {
-    id: string
-    participantCount: number
-    status: 'WAITING' | 'ACTIVE' | 'COMPLETED'
-    threshold: number
-    createdAt: string
-    participants: Participant[]
-    scores: Score[]
-    groupResult?: GroupResult
-  }
+  id: string
+  participantCount: number
+  status: 'WAITING' | 'ACTIVE' | 'COMPLETED'
+  threshold: number
+  createdAt: string
+  participants: Participant[]
+  scores: Score[]
+  groupResult?: GroupResult
+
+  // ADD: Penalty fields
+  recentPenalty?: boolean
+  sickPenalty?: boolean
+  importantPenalty?: boolean
+}
 
   export interface Participant {
     id: string
@@ -22,7 +27,7 @@ export interface Session {
   }
 
   export interface GroupResult {
-    averageScore: number
+    averageScore: number  // Keep as number for frontend display
     canSmoke: boolean
     totalSubmissions: number
     requiredSubmissions: number

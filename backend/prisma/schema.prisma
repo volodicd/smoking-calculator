@@ -21,6 +21,11 @@ model Session {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
+  // ADD: Admin penalty controls
+  recentPenalty    Boolean   @default(false)  // -15 points
+  sickPenalty      Boolean   @default(false)  // -10 points
+  importantPenalty Boolean   @default(false)  // -5 points
+
   participants     Participant[]
   groupResult      GroupResult?
 
@@ -35,6 +40,12 @@ model Participant {
   isJoined     Boolean @default(false)
   score        Int?
 
+  // ADD: Individual criteria scores
+  rarity       Int?
+  social       Int?
+  distance     Int?
+  context      Int?
+
   session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@map("participants")
@@ -43,7 +54,7 @@ model Participant {
 model GroupResult {
   id           String  @id @default(cuid())
   sessionId    String  @unique
-  averageScore Float
+  averageScore Int     // CHANGE: Float to Int
   canSmoke     Boolean
   createdAt    DateTime @default(now())
 
