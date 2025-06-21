@@ -276,8 +276,7 @@ app.post('/api/submit-score', async (request, reply) => {
   }
 })
 
-app.get('/health', () => ({ status: 'ok' }))
-
+app.get('/api/health', () => ({ status: 'ok' }))
 const start = async () => {
   try {
     await app.listen({ port: 3000, host: '0.0.0.0' })
