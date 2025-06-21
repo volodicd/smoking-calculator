@@ -11,7 +11,9 @@ app.register(cors, {
     'http://localhost:5173',
     'http://localhost:3000',
     'http://localhost',
-    /^http:\/\/localhost:\d+$/
+    /^http:\/\/localhost:\d+$/,
+    'https://calculator.volodic.com',
+    'http://calculator.volodic.com'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
