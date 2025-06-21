@@ -49,7 +49,7 @@ export function ScoreForm({ onSubmitted }: ScoreFormProps) {
     context: 5
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const { participantId, setPersonalScore, setSubmitted } = useUserStore()
+  const { participantId, setPersonalScore, setHasSubmitted } = useUserStore()
 
   const calculatePersonalScore = () => {
     return Math.round(
@@ -89,7 +89,7 @@ export function ScoreForm({ onSubmitted }: ScoreFormProps) {
 
       const data = await response.json()
       setPersonalScore(data.personalScore)
-      setSubmitted(true)
+      setHasSubmitted(true)
       toast.success('Score submitted successfully!')
       onSubmitted()
     } catch (error) {

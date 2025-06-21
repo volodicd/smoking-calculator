@@ -2,10 +2,13 @@ import React, { useState } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { AdminPanel } from './components/AdminPanel'
 import { JoinPage } from './components/JoinPage'
-import { EvaluationPage } from './components/EvaluationPage'
+import { ScoreForm } from './components/ScoreForm'
+import { WaitingRoom } from './components/WaitingRoom'
+import { Results } from './components/Results'
+import { useUserStore } from './store/userStore'
 
 // Simple router state management
-type PageType = 'join' | 'admin' | 'evaluation'
+type PageType = 'join' | 'admin' | 'evaluation' | 'waiting' | 'results'
 
 interface SessionData {
   sessionId: string
@@ -14,9 +17,18 @@ interface SessionData {
   hashCode: string
 }
 
+// Add interface for group result
+interface GroupResult {
+  averageScore: number
+  canSmoke: boolean
+  appliedPenalties: number
+}
+
 function App() {
   const [currentPage, setCurrentPage] = useState<PageType>('join')
   const [sessionData, setSessionData] = useState<SessionData | null>(null)
+  const [groupResult, setGroupResult] = useState<GroupResult | null>(null) // Add this state
+  const { hasSubmitted } = useUserStore()
 
   // Handle successful join
   const handleJoinSuccess = (data: SessionData) => {
@@ -24,15 +36,29 @@ function App() {
     setCurrentPage('evaluation')
   }
 
+  // Handle successful score submission
+  const handleScoreSubmitted = () => {
+    setCurrentPage('waiting')
+  }
+
+  // Handle waiting completion - FIXED to capture real data
+  const handleWaitingComplete = (result: GroupResult) => {
+    console.log('Real group result received:', result) // Debug log
+    setGroupResult(result) // Store the real group result
+    setCurrentPage('results')
+  }
+
   // Handle navigation
   const navigateToAdmin = () => {
     setCurrentPage('admin')
     setSessionData(null)
+    setGroupResult(null) // Clear group result
   }
 
   const navigateToJoin = () => {
     setCurrentPage('join')
     setSessionData(null)
+    setGroupResult(null) // Clear group result
   }
 
   // Simple routing based on URL
@@ -102,9 +128,18 @@ function App() {
         <AdminPanel />
       )}
 
-      {currentPage === 'evaluation' && sessionData && (
-        <EvaluationPage
+      {currentPage === 'evaluation' && sessionData && !hasSubmitted && (
+        <ScoreForm onSubmitted={handleScoreSubmitted} />
+      )}
+
+      {currentPage === 'waiting' && sessionData && hasSubmitted && (
+        <WaitingRoom onComplete={handleWaitingComplete} />
+      )}
+
+      {currentPage === 'results' && sessionData && groupResult && (
+        <Results
           sessionData={sessionData}
+          groupResult={groupResult}  // Pass real group result
           onBackToJoin={navigateToJoin}
         />
       )}

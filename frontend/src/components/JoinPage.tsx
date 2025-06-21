@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Users, Hash, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useUserStore } from '../store/userStore'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
@@ -12,6 +13,7 @@ interface JoinPageProps {
 export function JoinPage({ onJoinSuccess }: JoinPageProps) {
   const [joinCode, setJoinCode] = useState('')
   const [isJoining, setIsJoining] = useState(false)
+  const { setSessionData, setPersonalScore, setHasSubmitted } = useUserStore()
 
   const joinSession = async () => {
     if (!joinCode.trim()) {
@@ -35,6 +37,16 @@ export function JoinPage({ onJoinSuccess }: JoinPageProps) {
       }
 
       const sessionData = await response.json()
+
+      // Save session data to store
+      setSessionData({
+        participantId: sessionData.participantId,
+        sessionId: sessionData.sessionId,
+        sessionName: sessionData.sessionName,
+        hashCode: sessionData.hashCode
+      })
+      setHasSubmitted(false)
+      setPersonalScore(null)
 
       toast.success(`Successfully joined "${sessionData.sessionName}"!`)
 

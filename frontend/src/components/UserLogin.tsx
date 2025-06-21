@@ -13,7 +13,7 @@ interface UserLoginProps {
 export function UserLogin({ onLogin }: UserLoginProps) {
   const [hashCode, setHashCode] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const { setUser } = useUserStore()
+  const { setSessionData, setPersonalScore, setHasSubmitted } = useUserStore()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -28,7 +28,7 @@ export function UserLogin({ onLogin }: UserLoginProps) {
       const response = await fetch(`${API_URL}/api/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hashCode: hashCode.toUpperCase() })
+        body: JSON.stringify({ joinCode: hashCode.toUpperCase() })
       })
 
       if (!response.ok) {
@@ -37,13 +37,14 @@ export function UserLogin({ onLogin }: UserLoginProps) {
       }
 
       const data = await response.json()
-      setUser({
+      setSessionData({
         participantId: data.participantId,
         sessionId: data.sessionId,
-        token: data.token,
-        hasSubmitted: data.hasSubmitted,
-        personalScore: data.personalScore
+        sessionName: data.sessionName,
+        hashCode: data.hashCode
       })
+      setHasSubmitted(false)
+      setPersonalScore(null)
 
       toast.success('Successfully joined session!')
       onLogin()

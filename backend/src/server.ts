@@ -270,6 +270,8 @@ app.post('/api/join', async (request, reply) => {
   }
 })
 
+
+
 // Set penalties endpoint
 app.post('/api/admin/set-penalties', async (request, reply) => {
   try {
@@ -283,9 +285,20 @@ app.post('/api/admin/set-penalties', async (request, reply) => {
       return { error: 'Admin secret is required' }
     }
 
-    // Update session penalties
-    const session = await prisma.session.update({
+    // First find the session by adminSecret
+    const existingSession = await prisma.session.findFirst({
       where: { adminSecret: body.adminSecret },
+      include: { participants: true }
+    })
+
+    if (!existingSession) {
+      reply.status(404)
+      return { error: 'Session not found' }
+    }
+
+    // Update session penalties using unique id
+    const session = await prisma.session.update({
+      where: { id: existingSession.id },
       data: {
         recentPenalty: body.penalties.recent,
         sickPenalty: body.penalties.sick,
@@ -296,11 +309,6 @@ app.post('/api/admin/set-penalties', async (request, reply) => {
         groupResult: true
       }
     })
-
-    if (!session) {
-      reply.status(404)
-      return { error: 'Session not found' }
-    }
 
     // Recalculate group score if all participants submitted
     const submittedParticipants = session.participants.filter(p => p.hasSubmitted)
@@ -381,6 +389,79 @@ app.post('/api/submit', async (request, reply) => {
     }
   } catch (error) {
     app.log.error('Error submitting score:', error)
+    reply.status(500)
+    return { error: 'Internal server error' }
+  }
+})
+app.post('/api/participant/status', async (request, reply) => {
+  try {
+    const body = request.body as { participantId: string }
+
+    if (!body?.participantId) {
+      reply.status(400)
+      return { error: 'Participant ID is required' }
+    }
+
+    // Find participant and their session
+    const participant = await prisma.participant.findUnique({
+      where: { id: body.participantId },
+      include: {
+        session: {
+          include: {
+            participants: {
+              select: {
+                id: true,
+                hasSubmitted: true,
+                isJoined: true
+              }
+            },
+            groupResult: true
+          }
+        }
+      }
+    })
+
+    if (!participant || !participant.session) {
+      reply.status(404)
+      return { error: 'Participant or session not found' }
+    }
+
+    const session = participant.session
+
+    // Calculate current status
+    const joinedCount = session.participants.filter(p => p.isJoined).length
+    const submittedCount = session.participants.filter(p => p.hasSubmitted).length
+    const totalCount = session.participantCount
+
+    // Check if session is completed
+    if (session.status === 'COMPLETED' && session.groupResult) {
+      return {
+        id: session.id,
+        status: 'COMPLETED',
+        joinedCount,
+        submittedCount,
+        totalCount,
+        groupResult: {
+          averageScore: session.groupResult.averageScore,
+          canSmoke: session.groupResult.canSmoke,
+          appliedPenalties: (session.recentPenalty ? 15 : 0) +
+                          (session.sickPenalty ? 10 : 0) +
+                          (session.importantPenalty ? 5 : 0)
+        }
+      }
+    }
+
+    // Session still active
+    return {
+      id: session.id,
+      status: 'ACTIVE',
+      joinedCount,
+      submittedCount,
+      totalCount
+    }
+
+  } catch (error) {
+    app.log.error('Error fetching participant status:', error)
     reply.status(500)
     return { error: 'Internal server error' }
   }

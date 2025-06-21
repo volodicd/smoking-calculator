@@ -1,25 +1,31 @@
 export interface Session {
   id: string
+  name: string
+  joinCode: string
   participantCount: number
-  status: 'WAITING' | 'ACTIVE' | 'COMPLETED'
   threshold: number
+  status: 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
   createdAt: string
+  recentPenalty: boolean
+  sickPenalty: boolean
+  importantPenalty: boolean
   participants: Participant[]
-  scores: Score[]
-  groupResult?: GroupResult
-
-  // ADD: Penalty fields
-  recentPenalty?: boolean
-  sickPenalty?: boolean
-  importantPenalty?: boolean
-}
-
-  export interface Participant {
-    id: string
-    hashCode: string
-    hasSubmitted: boolean
-    joinedAt: string | null
+  groupResult?: {
+    averageScore: number
+    canSmoke: boolean
   }
+}
+export interface Participant {
+  id: string
+  hashCode: string
+  hasSubmitted: boolean
+  isJoined: boolean
+  score?: number
+  rarity?: number
+  social?: number
+  distance?: number
+  context?: number
+}
 
   export interface Score {
     personalScore: number
@@ -44,7 +50,16 @@ export interface Session {
   export interface UserState {
     participantId: string | null
     sessionId: string | null
-    token: string | null
+    sessionName: string | null
+    hashCode: string | null
     hasSubmitted: boolean
     personalScore: number | null
+  }
+
+
+  export interface SessionData {
+    sessionId: string
+    sessionName: string
+    participantId: string
+    hashCode: string
   }
